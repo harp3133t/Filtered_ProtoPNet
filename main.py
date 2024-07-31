@@ -57,7 +57,7 @@ wandb.init(
     # track hyperparameters and run metadata
 )
 
-
+os.environ['CUDA_VISIBLE_DEVICES'] = args.gpuid[0]
 ###############################################################################
 
 
@@ -130,7 +130,7 @@ normalize = transforms.Normalize(mean=mean, std=std)
 
 # all datasets
 # train set
-num_workers = 8  # 20
+num_workers = 2  # 20
 train_dataset = datasets.ImageFolder(
     train_dir,
     transforms.Compose([

@@ -42,7 +42,7 @@ class STProtoPNet(nn.Module):
 
         super(STProtoPNet, self).__init__()
         self.img_size = img_size
-        self.ratio = (trivial + support) / trivial
+        self.ratio = trivial / (trivial + support) 
 
         self.prototype_shape = prototype_shape
         self.num_prototypes = prototype_shape[0]
