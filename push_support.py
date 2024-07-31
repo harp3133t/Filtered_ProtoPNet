@@ -27,8 +27,8 @@ def push_prototypes(dataloader, # pytorch dataloader (must be unnormalized in [0
     log('\tpush')
 
     start = time.time()
-    prototype_shape = prototype_network_parallel.module.prototype_shape
-    n_prototypes = prototype_network_parallel.module.num_prototypes
+    prototype_shape = prototype_network_parallel.module.support_prototype_shape
+    n_prototypes = prototype_network_parallel.module.support_num_prototypes
     # saves the closest distance seen so far
     global_min_proto_dist = np.full(n_prototypes, np.inf)
     # saves the patch representation that gives the current smallest distance
@@ -155,7 +155,7 @@ def update_prototypes_on_batch(search_batch_input,
             img_label = img_y.item()
             class_to_img_index_dict[img_label].append(img_index)
 
-    prototype_shape = prototype_network_parallel.module.prototype_shape
+    prototype_shape = prototype_network_parallel.module.support_prototype_shape
     n_prototypes = prototype_shape[0] #2000
     proto_h = prototype_shape[2]
     proto_w = prototype_shape[3]
@@ -165,7 +165,7 @@ def update_prototypes_on_batch(search_batch_input,
         #if n_prototypes_per_class != None:
         if class_specific:
             # target_class is the class of the class_specific prototype
-            target_class = torch.argmax(prototype_network_parallel.module.prototype_class_identity[j]).item()
+            target_class = torch.argmax(prototype_network_parallel.module.support_prototype_class_identity[j]).item()
             # if there is not images of the target_class from this batch
             # we go on to the next prototype
             if len(class_to_img_index_dict[target_class]) == 0:

@@ -40,55 +40,64 @@ log=print, wandb_logger = None):
             # compute loss
             cross_entropy_trivial = F.cross_entropy(output[0], target)
             cross_entropy_support = F.cross_entropy(output[1], target)
-            cross_entropy = 0.5 * (cross_entropy_trivial + cross_entropy_support)
+            cross_entropy = model.module.ratio * (cross_entropy_trivial + cross_entropy_support)
 
             if class_specific:
 
                 # calculate cluster cost
-                prototypes_of_correct_class = torch.t(model.module.prototype_class_identity[:, label]).cuda()
-
-                cluster_real_trivial, _ = torch.max(max_similarities[0] * prototypes_of_correct_class, dim=1)
+                trivial_prototypes_of_correct_class = torch.t(model.module.trivial_prototype_class_identity[:, label]).cuda()
+                support_prototypes_of_correct_class = torch.t(model.module.support_prototype_class_identity[:, label]).cuda()
+                cluster_real_trivial, _ = torch.max(max_similarities[0] * trivial_prototypes_of_correct_class, dim=1)
                 cluster_cost_trivial = torch.mean(cluster_real_trivial)
-                cluster_real_support, _ = torch.max(max_similarities[1] * prototypes_of_correct_class, dim=1)
+                cluster_real_support, _ = torch.max(max_similarities[1] * support_prototypes_of_correct_class, dim=1)
                 cluster_cost_support = torch.mean(cluster_real_support)
 
                 # calculate separation cost
-                prototypes_of_wrong_class = 1 - prototypes_of_correct_class
-                separation_real_trivial, _ = torch.max(max_similarities[0] * prototypes_of_wrong_class, dim=1)
+                trivial_prototypes_of_wrong_class = 1 - trivial_prototypes_of_correct_class
+                support_prototypes_of_wrong_class = 1 - support_prototypes_of_correct_class
+                
+                separation_real_trivial, _ = torch.max(max_similarities[0] * trivial_prototypes_of_wrong_class, dim=1)
                 separation_cost_trivial = torch.mean(separation_real_trivial)
-                separation_real_support, _ = torch.max(max_similarities[1] * prototypes_of_wrong_class, dim=1)
+                separation_real_support, _ = torch.max(max_similarities[1] * support_prototypes_of_wrong_class, dim=1)
                 separation_cost_support = torch.mean(separation_real_support)
 
                 # calculate closeness and discrimination losses
                 #######################################################################
-                num_proto_per_class = model.module.num_prototypes_per_class
+                trivial_num_proto_per_class = model.module.trivial_num_prototypes_per_class
+                support_num_proto_per_class = model.module.support_num_prototypes_per_class
+
                 I_operator_c = 1 - torch.eye(model.module.num_classes, model.module.num_classes).cuda()  # [200, 200]
 
                 prototypes_support = model.module.prototype_vectors_support.squeeze()
-                prototypes_matrix_support = prototypes_support.reshape(model.module.num_classes, num_proto_per_class, model.module.prototype_shape[1])  # [200, 5, 64]
+                prototypes_matrix_support = prototypes_support.reshape(model.module.num_classes, support_num_proto_per_class, model.module.support_prototype_shape[1])  # [200, 5, 64]
                 simi_dot_support = list_of_similarities_3d_dot(prototypes_matrix_support, prototypes_matrix_support)  # [200, 5, 200, 5]
                 simi_dot_support_min = torch.min(simi_dot_support.permute(0, 2, 1, 3).reshape(model.module.num_classes, model.module.num_classes, -1), dim=-1)[0]  # [200, 200]
-                closeness_cost = (- simi_dot_support_min * I_operator_c).sum() / I_operator_c.sum()
+                support_closeness_cost = (- simi_dot_support_min * I_operator_c).sum() / I_operator_c.sum()
+
 
                 prototypes_trivial = model.module.prototype_vectors_trivial.squeeze()
-                prototypes_matrix_trivial = prototypes_trivial.reshape(model.module.num_classes, num_proto_per_class, model.module.prototype_shape[1])  # [200, 5, 64]
+                prototypes_matrix_trivial = prototypes_trivial.reshape(model.module.num_classes, trivial_num_proto_per_class, model.module.trivial_prototype_shape[1])  # [200, 5, 64]
                 simi_dot_trivial = list_of_similarities_3d_dot(prototypes_matrix_trivial, prototypes_matrix_trivial)  # [200, 5, 200, 5]
                 simi_dot_trivial_max = torch.max(simi_dot_trivial.permute(0, 2, 1, 3).reshape(model.module.num_classes, model.module.num_classes, -1), dim=-1)[0]  # [200, 200]
+                trivial_closeness_cost = (- simi_dot_trivial_max * I_operator_c).sum() / I_operator_c.sum()
+
+                closeness_cost = (trivial_closeness_cost * model.module.ratio) + (support_closeness_cost * (1 - model.module.ratio))
                 discrimination_cost = (simi_dot_trivial_max * I_operator_c).sum() / I_operator_c.sum()
                 #######################################################################
 
                 # calculate orthogonality loss
                 #######################################################################
-                I_operator_p = torch.eye(num_proto_per_class, num_proto_per_class).cuda()  # [5, 5]
+                trivial_I_operator_p = torch.eye(trivial_num_proto_per_class, trivial_num_proto_per_class).cuda()  # [5, 5]
+                support_I_operator_p = torch.eye(support_num_proto_per_class, support_num_proto_per_class).cuda()  # [5, 5]
 
                 prototypes_matrix_support_T = torch.transpose(prototypes_matrix_support, 1, 2)  # [200, 64, 5]
                 orth_dot_support = torch.matmul(prototypes_matrix_support, prototypes_matrix_support_T)  # [200, 5, 64] * [200, 64, 5] -> [200, 5, 5]
-                difference_support = orth_dot_support - I_operator_p  # [200, 5, 5] - [5, 5]-> [200, 5, 5]
+                difference_support = orth_dot_support - support_I_operator_p  # [200, 5, 5] - [5, 5]-> [200, 5, 5]
                 orth_cost_support = torch.sum(torch.norm(difference_support, p=1, dim=[1, 2]))
 
                 prototypes_matrix_trivial_T = torch.transpose(prototypes_matrix_trivial, 1, 2)  # [200, 64, 5]
                 orth_dot_trivial = torch.matmul(prototypes_matrix_trivial, prototypes_matrix_trivial_T)  # [200, 5, 64] * [200, 64, 5] -> [200, 5, 5]
-                difference_trivial = orth_dot_trivial - I_operator_p  # [200, 5, 5] - [5, 5]-> [200, 5, 5]
+                difference_trivial = orth_dot_trivial - trivial_I_operator_p  # [200, 5, 5] - [5, 5]-> [200, 5, 5]
                 orth_cost_trivial = torch.sum(torch.norm(difference_trivial, p=1, dim=[1, 2]))
                 #######################################################################
 
@@ -102,9 +111,10 @@ log=print, wandb_logger = None):
                 del difference_trivial
 
                 if use_l1_mask:
-                    l1_mask = 1 - torch.t(model.module.prototype_class_identity).cuda()
-                    l1_trivial = (model.module.last_layer_trivial.weight * l1_mask).norm(p=1)
-                    l1_support = (model.module.last_layer_support.weight * l1_mask).norm(p=1)
+                    l1_trivial_mask = 1 - torch.t(model.module.trivial_prototype_class_identity).cuda()
+                    l1_support_mask = 1 - torch.t(model.module.support_prototype_class_identity).cuda()
+                    l1_trivial = (model.module.last_layer_trivial.weight * l1_trivial_mask).norm(p=1)
+                    l1_support = (model.module.last_layer_support.weight * l1_support_mask).norm(p=1)
                 else:
                     l1_trivial = model.module.last_layer_trivial.weight.norm(p=1)
                     l1_support = model.module.last_layer_support.weight.norm(p=1)
@@ -125,9 +135,15 @@ log=print, wandb_logger = None):
 
             n_batches += 1
             total_cross_entropy += cross_entropy.item()
-            total_cluster_cost += 0.5 * (cluster_cost_trivial + cluster_cost_support).item()
-            total_separation_cost += 0.5 * (separation_cost_trivial + separation_cost_support).item()
-            total_orth_cost += 0.5 * (orth_cost_trivial + orth_cost_support).item()
+
+
+
+            total_cluster_cost += (cluster_cost_trivial * model.module.ratio) + \
+                                    (cluster_cost_support * (1-model.module.ratio)).item()
+            total_separation_cost += (separation_cost_trivial * model.module.ratio)+ \
+                                        (separation_cost_support * (1-model.module.ratio)).item()
+            total_orth_cost += (orth_cost_trivial * model.module.ratio) + \
+                                (orth_cost_support* (1-model.module.ratio)).item()
 
         # compute gradient and do SGD step
         if is_train:
@@ -238,7 +254,7 @@ log=print, wandb_logger = None):
             # compute loss
             cross_entropy_trivial = F.cross_entropy(output[0], target)
             cross_entropy_support = F.cross_entropy(output[1], target)
-            cross_entropy = 0.5 * (cross_entropy_trivial + cross_entropy_support)
+            cross_entropy = model.module.ratio * (cross_entropy_trivial + cross_entropy_support)
 
             # summed logits
             _, predicted = torch.max(output[0].data + output[1].data, 1)

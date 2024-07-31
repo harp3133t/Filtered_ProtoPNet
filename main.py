@@ -43,11 +43,10 @@ np.random.seed(41)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-gpuid', nargs=1, type=str, default='0,1,2,3') # python3 main.py -gpuid=0,1,2,3
-parser.add_argument('-project', type=str, default='Summation_attention')
+parser.add_argument('-project', type=str, default='Adjust ratio Support Trivial')
 parser.add_argument('-name')
 parser.add_argument('-exp_num')
-parser.add_argument('-attention_num')
-
+parser.add_argument('-ratio')
 args = parser.parse_args()
 
 wandb.init(
@@ -102,17 +101,15 @@ img_size = settings_CUB_DOG.img_size
 add_on_layers_type = settings_CUB_DOG.add_on_layers_type
 prototype_shape = settings_CUB_DOG.prototype_shape
 prototype_activation_function = settings_CUB_DOG.prototype_activation_function
+
 #datasets
-# train_dir = settings_CUB_DOG.train_dir
-# test_dir = settings_CUB_DOG.test_dir
-# train_push_dir = settings_CUB_DOG.train_push_dir
 train_batch_size = settings_CUB_DOG.train_batch_size
 test_batch_size = settings_CUB_DOG.test_batch_size
 train_push_batch_size = settings_CUB_DOG.train_push_batch_size
-data_path = '../data/testcode/'#Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/'#'../data_legacy/full/full_'
-train_dir = data_path + 'train_augmented/'#'cub200_cropped_train_augmented/'#+'train/'
-test_dir = data_path + 'test/'#'cub200_cropped_test/'#'val/'
-train_push_dir = data_path + 'train/'#'cub200_cropped_train/'#'train/'
+data_path = '../data/testcode/'
+train_dir = data_path + 'train_augmented/'
+test_dir = data_path + 'test/'
+train_push_dir = data_path + 'train/'
 
 
 
@@ -183,7 +180,7 @@ ppnet = model.construct_STProtoPNet(base_architecture=base_architecture,
                                     prototype_activation_function=prototype_activation_function,
                                     add_on_layers_type=add_on_layers_type,
                                     threshold = 0.1,
-                                    attention_num = args.attention_num)
+                                    ratio = float(args.ratio))
 ppnet = ppnet.cuda()
 ppnet_multi = torch.nn.DataParallel(ppnet)
 

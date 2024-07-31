@@ -37,27 +37,52 @@ class STProtoPNet(nn.Module):
                  prototype_activation_function='log',
                  add_on_layers_type='bottleneck',
                  threshold = 0.0029,
-                 attention_num = 5):
+                 ratio = 0.5):
 
         super(STProtoPNet, self).__init__()
         self.img_size = img_size
+        self.ratio = ratio
+
         self.prototype_shape = prototype_shape
         self.num_prototypes = prototype_shape[0]
+        
+
+        # print(self.num_prototypes, '*' , self.ratio)
+        # print(int(self.num_prototypes * self.ratio))
+
+        self.trivial_prototype_shape = (int(self.num_prototypes * self.ratio),) + self.prototype_shape[1:]
+        self.support_prototype_shape = (int(self.num_prototypes * (1-self.ratio)),) + self.prototype_shape[1:]
+        self.trivial_num_prototypes = self.trivial_prototype_shape[0]
+
+        self.support_num_prototypes = self.support_prototype_shape[0]
+        
+
+
         self.num_classes = num_classes
+
         self.epsilon = 1e-4
         self.threshold = threshold
+        
         self.prototype_activation_function = prototype_activation_function  # log
         self.dino = torch.hub.load('facebookresearch/dino:main', 'dino_vits8')
         self.dino.eval()
-        self.attention_num = attention_num
 
-        assert (self.num_prototypes % self.num_classes == 0)
+        # assert (self.num_prototypes % self.num_classes == 0)
         # a onehot indication matrix for each prototype's class identity
-        self.prototype_class_identity = torch.zeros(self.num_prototypes, self.num_classes)
+        self.trivial_prototype_class_identity = torch.zeros(self.trivial_num_prototypes, self.num_classes)
+        self.support_prototype_class_identity = torch.zeros(self.support_num_prototypes, self.num_classes)
 
-        self.num_prototypes_per_class = self.num_prototypes // self.num_classes
-        for j in range(self.num_prototypes):
-            self.prototype_class_identity[j, j // self.num_prototypes_per_class] = 1
+        self.trivial_num_prototypes_per_class = self.trivial_num_prototypes // self.num_classes
+        self.support_num_prototypes_per_class = self.support_num_prototypes // self.num_classes
+        # print('trivial:',self.trivial_num_prototypes, '/', self.trivial_num_prototypes_per_class)
+        # print('support:',self.support_num_prototypes, '/', self.support_num_prototypes_per_class)
+
+        for j in range(self.trivial_num_prototypes):
+            self.trivial_prototype_class_identity[j, j // self.trivial_num_prototypes_per_class] = 1
+
+        for j in range(self.support_num_prototypes):
+            self.support_prototype_class_identity[j, j // self.support_num_prototypes_per_class] = 1
+
 
         self.proto_layer_rf_info = proto_layer_rf_info
 
@@ -92,6 +117,7 @@ class STProtoPNet(nn.Module):
                     add_on_layers.append(nn.Sigmoid())
                 current_in_channels = current_in_channels // 2
             self.add_on_layers = nn.Sequential(*add_on_layers)
+
         else:
             self.add_on_layers_trivial = nn.Sequential(
                 nn.Identity() if 'VGG' in features_name else nn.Upsample(scale_factor=2, mode='bilinear'),
@@ -104,11 +130,11 @@ class STProtoPNet(nn.Module):
                 nn.Conv2d(in_channels=self.prototype_shape[1], out_channels=self.prototype_shape[1], kernel_size=1),
             )
 
-        self.prototype_vectors_trivial = nn.Parameter(torch.rand(self.prototype_shape), requires_grad=True)
-        self.prototype_vectors_support = nn.Parameter(torch.rand(self.prototype_shape), requires_grad=True)
+        self.prototype_vectors_trivial = nn.Parameter(torch.rand(self.trivial_prototype_shape), requires_grad=True)
+        self.prototype_vectors_support = nn.Parameter(torch.rand(self.support_prototype_shape), requires_grad=True)
 
-        self.last_layer_trivial = nn.Linear(self.num_prototypes, self.num_classes, bias=False)
-        self.last_layer_support = nn.Linear(self.num_prototypes, self.num_classes, bias=False)
+        self.last_layer_trivial = nn.Linear(self.trivial_prototype_shape[0], self.num_classes, bias=False)
+        self.last_layer_support = nn.Linear(self.support_prototype_shape[0], self.num_classes, bias=False)
 
         self.ones = nn.Parameter(torch.ones(self.prototype_shape), requires_grad=False)
 
@@ -157,17 +183,31 @@ class STProtoPNet(nn.Module):
     def distance_2_similarity_linear(self, distances):
         return (self.prototype_shape[1] * self.prototype_shape[2] * self.prototype_shape[3]) ** 2 - distances
 
-    def global_min_pooling(self, input):
+    def trivial_global_min_pooling(self, input):
 
         min_output = -F.max_pool2d(-input, kernel_size=(input.size()[2], input.size()[3]))
-        min_output = min_output.view(-1, self.num_prototypes)
+        min_output = min_output.view(-1, self.trivial_num_prototypes)
 
         return min_output
 
-    def global_max_pooling(self, input):
+    def trivial_global_max_pooling(self, input):
 
         max_output = F.max_pool2d(input, kernel_size=(input.size()[2], input.size()[3]))
-        max_output = max_output.view(-1, self.num_prototypes)
+        max_output = max_output.view(-1, self.trivial_num_prototypes)
+
+        return max_output
+
+    def support_global_min_pooling(self, input):
+
+        min_output = -F.max_pool2d(-input, kernel_size=(input.size()[2], input.size()[3]))
+        min_output = min_output.view(-1, self.support_num_prototypes)
+
+        return min_output
+
+    def support_global_max_pooling(self, input):
+
+        max_output = F.max_pool2d(input, kernel_size=(input.size()[2], input.size()[3]))
+        max_output = max_output.view(-1, self.support_num_prototypes)
 
         return max_output
 
@@ -221,10 +261,10 @@ class STProtoPNet(nn.Module):
     def forward(self, x):
         attentions = self.get_attention(x)
         cosine_similarities_trivial, cosine_similarities_support = self.prototype_distances(x, attentions)
-
-        prototype_activations_trivial = self.global_max_pooling(cosine_similarities_trivial)
-        prototype_activations_support = self.global_max_pooling(cosine_similarities_support)
-
+        # print('cosine_similarities_trivial:',cosine_similarities_trivial.shape)
+        prototype_activations_trivial = self.trivial_global_max_pooling(cosine_similarities_trivial)
+        prototype_activations_support = self.support_global_max_pooling(cosine_similarities_support)
+        # print('prototype_activations_trivial:',prototype_activations_trivial.shape)
         logits_trivial = self.last_layer_trivial(prototype_activations_trivial)
         logits_support = self.last_layer_support(prototype_activations_support)
 
@@ -256,17 +296,21 @@ class STProtoPNet(nn.Module):
 
     def set_last_layer_incorrect_connection(self, incorrect_strength):
 
-        positive_one_weights_locations = torch.t(self.prototype_class_identity)
-        negative_one_weights_locations = 1 - positive_one_weights_locations
+        support_positive_one_weights_locations = torch.t(self.support_prototype_class_identity)
+        support_negative_one_weights_locations = 1 - support_positive_one_weights_locations
+        trivial_positive_one_weights_locations = torch.t(self.trivial_prototype_class_identity)
+        trivial_negative_one_weights_locations = 1 - trivial_positive_one_weights_locations
 
         correct_class_connection = 1
         incorrect_class_connection = incorrect_strength
+
         self.last_layer_trivial.weight.data.copy_(
-            correct_class_connection * positive_one_weights_locations
-            + incorrect_class_connection * negative_one_weights_locations)
+            correct_class_connection * trivial_positive_one_weights_locations
+            + incorrect_class_connection * trivial_negative_one_weights_locations)
+
         self.last_layer_support.weight.data.copy_(
-            correct_class_connection * positive_one_weights_locations
-            + incorrect_class_connection * negative_one_weights_locations)
+            correct_class_connection * support_positive_one_weights_locations
+            + incorrect_class_connection * support_negative_one_weights_locations)
 
     def _initialize_weights(self):
         for m in self.add_on_layers_trivial.modules():
@@ -301,7 +345,7 @@ def construct_STProtoPNet(base_architecture, pretrained=True, img_size=224,
                           prototype_activation_function='log',
                           add_on_layers_type='bottleneck',
                           threshold = 0.00029,
-                          attention_num = 5):
+                          ratio = 0.5):
     features = base_architecture_to_features[base_architecture](pretrained=pretrained)
     layer_filter_sizes, layer_strides, layer_paddings = features.conv_info()
     proto_layer_rf_info = compute_proto_layer_rf_info_v2(img_size=img_size,
@@ -317,5 +361,5 @@ def construct_STProtoPNet(base_architecture, pretrained=True, img_size=224,
                        init_weights=True,
                        prototype_activation_function=prototype_activation_function,
                        add_on_layers_type=add_on_layers_type,
-                       threshold = 0.0029,
-                    attention_num = 2)
+                       threshold = 0.1,
+                       ratio = ratio)

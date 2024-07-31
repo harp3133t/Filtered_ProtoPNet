@@ -66,8 +66,8 @@ class CausalMetric():
         Return:
             scores (nd.array): Array containing scores at every step.
         """
-        pred_ori, _ = self.model(img_tensor.cuda())
-        # pred_ori = 0.5 * (torch.softmax(pred_ori[0], dim=1) + torch.softmax(pred_ori[1], dim=1))   # prob
+        pred_ori, _, _ = self.model(img_tensor.cuda())
+        pred_ori = 0.5 * (torch.softmax(pred_ori[0], dim=1) + torch.softmax(pred_ori[1], dim=1))   # prob
         top, c = torch.max(pred_ori, 1)
         c = c.cpu().numpy()[0]
         n_steps = (HW + self.step - 1) // self.step
@@ -88,8 +88,8 @@ class CausalMetric():
         # Coordinates of pixels in order of decreasing saliency
         salient_order = np.flip(np.argsort(explanation.reshape(-1, HW), axis=1), axis=-1)
         for i in range(n_steps+1):
-            pred, _ = self.model(start.cuda())
-            # pred = 0.5*(torch.softmax(pred[0], dim=1) + torch.softmax(pred[1], dim=1))   # prob
+            pred, _, _ = self.model(start.cuda())
+            pred = 0.5*(torch.softmax(pred[0], dim=1) + torch.softmax(pred[1], dim=1))   # prob
             scores[i] = pred[0, c]
             # Render image if verbose, if it's the last step or if save is required.
             if verbose == 2 or (verbose == 1 and i == n_steps) or save_to:

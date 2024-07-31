@@ -1,5 +1,5 @@
 img_size = 224
-prototype_shape = (1000*1, 64, 1, 1)
+prototype_shape = (1000*2, 64, 1, 1)
 # prototype_shape = (1000*4, 64, 1, 1)
 num_classes = 200
 prototype_activation_function = 'log'
