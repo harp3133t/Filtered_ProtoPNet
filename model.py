@@ -37,11 +37,12 @@ class STProtoPNet(nn.Module):
                  prototype_activation_function='log',
                  add_on_layers_type='bottleneck',
                  threshold = 0.0029,
-                 ratio = 0.5):
+                 trivial = 1000,
+                 support = 200):
 
         super(STProtoPNet, self).__init__()
         self.img_size = img_size
-        self.ratio = ratio
+        self.ratio = (trivial + support) / trivial
 
         self.prototype_shape = prototype_shape
         self.num_prototypes = prototype_shape[0]
@@ -50,10 +51,9 @@ class STProtoPNet(nn.Module):
         # print(self.num_prototypes, '*' , self.ratio)
         # print(int(self.num_prototypes * self.ratio))
 
-        self.trivial_prototype_shape = (int(self.num_prototypes * self.ratio),) + self.prototype_shape[1:]
-        self.support_prototype_shape = (int(self.num_prototypes * (1-self.ratio)),) + self.prototype_shape[1:]
+        self.trivial_prototype_shape = (trivial,) + self.prototype_shape[1:]
+        self.support_prototype_shape = (support,) + self.prototype_shape[1:]
         self.trivial_num_prototypes = self.trivial_prototype_shape[0]
-
         self.support_num_prototypes = self.support_prototype_shape[0]
         
 
@@ -345,7 +345,8 @@ def construct_STProtoPNet(base_architecture, pretrained=True, img_size=224,
                           prototype_activation_function='log',
                           add_on_layers_type='bottleneck',
                           threshold = 0.00029,
-                          ratio = 0.5):
+                          trivial = 1000,
+                          support = 200):
     features = base_architecture_to_features[base_architecture](pretrained=pretrained)
     layer_filter_sizes, layer_strides, layer_paddings = features.conv_info()
     proto_layer_rf_info = compute_proto_layer_rf_info_v2(img_size=img_size,
@@ -362,4 +363,5 @@ def construct_STProtoPNet(base_architecture, pretrained=True, img_size=224,
                        prototype_activation_function=prototype_activation_function,
                        add_on_layers_type=add_on_layers_type,
                        threshold = 0.1,
-                       ratio = ratio)
+                       trivial = 1000,
+                       support = 200)

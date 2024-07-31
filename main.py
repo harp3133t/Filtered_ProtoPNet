@@ -46,7 +46,8 @@ parser.add_argument('-gpuid', nargs=1, type=str, default='0,1,2,3') # python3 ma
 parser.add_argument('-project', type=str, default='Adjust ratio Support Trivial')
 parser.add_argument('-name')
 parser.add_argument('-exp_num')
-parser.add_argument('-ratio')
+parser.add_argument('-trivial_num')
+parser.add_argument('-support_num')
 args = parser.parse_args()
 
 wandb.init(
@@ -99,14 +100,14 @@ proto_bound_boxes_filename_prefix = 'bb'
 num_classes = settings_CUB_DOG.num_classes
 img_size = settings_CUB_DOG.img_size
 add_on_layers_type = settings_CUB_DOG.add_on_layers_type
-prototype_shape = settings_CUB_DOG.prototype_shape
+prototype_shape = (int(args.trivial_num) + int(args.support_num), 64, 1, 1)#settings_CUB_DOG.prototype_shape
 prototype_activation_function = settings_CUB_DOG.prototype_activation_function
 
 #datasets
 train_batch_size = settings_CUB_DOG.train_batch_size
 test_batch_size = settings_CUB_DOG.test_batch_size
 train_push_batch_size = settings_CUB_DOG.train_push_batch_size
-data_path = '../data/testcode/'
+data_path = '../data/full/'
 train_dir = data_path + 'train_augmented/'
 test_dir = data_path + 'test/'
 train_push_dir = data_path + 'train/'
@@ -180,7 +181,9 @@ ppnet = model.construct_STProtoPNet(base_architecture=base_architecture,
                                     prototype_activation_function=prototype_activation_function,
                                     add_on_layers_type=add_on_layers_type,
                                     threshold = 0.1,
-                                    ratio = float(args.ratio))
+                                    trivial = int(args.trivial_num),
+                                    support = int(args.support_num)
+                                    )
 ppnet = ppnet.cuda()
 ppnet_multi = torch.nn.DataParallel(ppnet)
 

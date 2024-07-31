@@ -1,5 +1,5 @@
 img_size = 224
-prototype_shape = (1000*2, 64, 1, 1)
+prototype_shape = (1000 + 400, 64, 1, 1)
 # prototype_shape = (1000*4, 64, 1, 1)
 num_classes = 200
 prototype_activation_function = 'log'
@@ -12,9 +12,9 @@ train_dir = data_path + 'train/'
 test_dir = data_path + 'test/'
 train_push_dir = data_path + 'train'
 
-train_batch_size = 80
-test_batch_size = 100
-train_push_batch_size = 100
+train_batch_size = 70
+test_batch_size = 80
+train_push_batch_size = 80
 
 joint_optimizer_lrs = {'features': 1 * 1e-4,
                        'add_on_layers': 3e-3,
